@@ -202,7 +202,8 @@ type IGBlock =
   | { kind: 'life'; title?: string; items: string[] }    // 🏠 生活でこう役立つ（毎記事必須）
   | { kind: 'note'; label?: string; text: string }       // 👪 おうちの人へ（末尾・任意）
   | { kind: 'take'; text: string }                       // 今日の学び（1文）
-  | { kind: 'quiz'; question: string; options: string[]; answer: string; pose?: FinPose };
+  | { kind: 'quiz'; question: string; options: string[]; correctIndex: number; answer: string; pose?: FinPose };
+  //   correctIndex = 正解の options のインデックス（0始まり）。ユーザーが選択し正解するとXP獲得。answer は解説文（「こたえ：B（…）」など）
 ```
 
 > ⚠️ `points` / `life` / `note` ブロックはアプリの **次期ビルド（Build 4 以降）** で描画される。それ以前の審査中ビルド（Build 3）では `infographic` 機能自体が未搭載のため影響なし。
@@ -217,7 +218,7 @@ type IGBlock =
 6. `section`「数字で見る今回の動き」＋ `chart` または `numbers`（検索で確認した実数値のみ。確認できない数値はブロックごと省略）
 7. `life`（🏠「生活でこう役立つ」2〜3個。**最重要・毎記事必須**。下記参照）
 8. `take`（今日の学び）
-9. `quiz`（3択クイズ）
+9. `quiz`（3択クイズ。**`correctIndex` に正解の選択肢番号〈0始まり〉を必ず入れる**。ユーザーが選んで正解するとXPがもらえる。`answer` は解説文）
 10. `note`（👪「おうちの人へ」任意。子どもと話すきっかけになる一言など）
 
 ### 🏠 「生活でこう役立つ」の書き方（毎記事必須）
