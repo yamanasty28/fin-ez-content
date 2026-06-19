@@ -1,0 +1,42 @@
+name: Daily articles
+
+on:
+  schedule:
+    - cron: "5 21 * * *"   # 21:05 UTC = 06:05 JST
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-articles
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate today's articles
+        id: gen
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/generate_daily.py
+
+      - name: Commit & push
+        run: |
+          if git diff --quiet -- articles.json; then
+            echo "no changes"; exit 0
+          fi
+          git config user.name "fin-ez-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add articles.json
+          git commit -m "Add daily articles ${{ steps.gen.outputs.date }} (${{ steps.gen.outputs.count }} articles)"
+          git push
