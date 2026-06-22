@@ -153,36 +153,36 @@ Term:
 """
 
 
-def generate_articles(facts, existing_terms):
-    """Phase B: 事実をもとに7本＋辞書をJSONで生成（ストリーミングで受信）。"""
-    system = (
+def build_system():
+    return (
         "あなたはFIN-EZ（小学生・中学生でも理解できる初心者向け金融ニュースアプリ）の編集者です。"
         "以下のCLAUDE.mdのルール（NGワード・用語の言い換え・やさしいトーン・インフォグラフィック構成・"
         "プレミアム/辞書ルール・法務）に**完全に従い**、本文を段落の羅列にせずインフォグラフィックで作ること。\n\n"
         "=== CLAUDE.md ===\n" + open(RULES_PATH, encoding="utf-8").read()
     )
-    rules = (
-        f"今日は{TODAY}。下の『調査メモ』の確認済み事実だけを使って（数値の捏造・将来予測は禁止）、"
-        "本日分の記事を **最低7本** 作る。各ジャンル(stocks/crypto/fx/economy/money)を必ず1本以上カバーし、"
-        "ニュースが多い人気ジャンル（株式・仮想通貨・経済が多くなりやすい）を厚くして7本以上にする。"
-        "ニュースが薄いジャンルは捏造せず基礎解説記事で1本埋める。\n"
-        "**無料はちょうど3本（最重要・なるべく違うジャンル、isPremium:false）、残りは全部プレミアム(isPremium:true)。**\n"
-        "外貨表記には円換算（約◯円）を添える。数値には比較・変化・水準を添える。"
-        "暗号資産の記事には末尾に必ず note でリスク注記（価格変動が大きく元本割れの恐れ・預金保険対象外・本アプリは売買を行わない）。\n"
-        "専門用語で説明が必要なものは、下の『既存辞書』に無ければ terms に追加する。\n\n"
-        f"publishedAt は全記事 \"{PUB}\" を使う。id の日付は {TODAY_COMPACT}。\n\n"
-        + SCHEMA_SPEC.replace("<PUB>", PUB)
-        + "\n\n=== 既存辞書（重複追加禁止の用語名） ===\n"
-        + ", ".join(sorted(existing_terms))
-        + "\n\n=== 調査メモ ===\n" + facts
-        + "\n\nそれではJSONのみを出力してください。"
-    )
+
+
+# 部分一致でも弾かれる禁止語。本文・見出し・要約・タグ・quizの選択肢/解説・例文・辞書定義の
+# どこにも絶対に出してはいけない。中立表現へ言い換えること。
+NG_BAN = (
+    "【最重要・厳守】次の語は、記事の本文・タイトル・要約・タグ・quizの選択肢や解説(answer)・"
+    "例文・辞書定義を含め、JSONのどこにも一切使わないこと（部分一致でも検証で弾かれて全体が失敗する）：\n"
+    + "、".join(NG_WORDS) + "。\n"
+    "投資をすすめる/煽る表現は中立表現に言い換える。例：『買い時』→『〜という動きが見られています（投資判断はご自身で）』、"
+    "『今が買い』→使わず削除、『必ず〜』→『〜という傾向があります』『〜とは限りません』、"
+    "『絶対』『間違いなく』→使わない、『安全資産』→『比較的値動きが穏やかとされる』。"
+    "クイズの誤答選択肢にもこれらの語を入れないこと。\n"
+)
+
+
+def _stream_messages(system, messages, max_tokens=32000):
+    """Messages API をストリーミングで叩き、テキストを結合して返す。"""
     payload = {
         "model": MODEL,
-        "max_tokens": 32000,
+        "max_tokens": max_tokens,
         "stream": True,
         "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-        "messages": [{"role": "user", "content": rules}],
+        "messages": messages,
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(API_URL, data=data, headers=_headers(), method="POST")
@@ -209,6 +209,41 @@ def generate_articles(facts, existing_terms):
     if stop_reason == "max_tokens":
         raise SystemExit("生成が max_tokens で打ち切られました（JSON不完全）。")
     return text
+
+
+def generate_articles(facts, existing_terms):
+    """Phase B: 事実をもとに7本＋辞書をJSONで生成（ストリーミングで受信）。"""
+    rules = (
+        f"今日は{TODAY}。下の『調査メモ』の確認済み事実だけを使って（数値の捏造・将来予測は禁止）、"
+        "本日分の記事を **最低7本** 作る。各ジャンル(stocks/crypto/fx/economy/money)を必ず1本以上カバーし、"
+        "ニュースが多い人気ジャンル（株式・仮想通貨・経済が多くなりやすい）を厚くして7本以上にする。"
+        "ニュースが薄いジャンルは捏造せず基礎解説記事で1本埋める。\n"
+        "**無料はちょうど3本（最重要・なるべく違うジャンル、isPremium:false）、残りは全部プレミアム(isPremium:true)。**\n"
+        "外貨表記には円換算（約◯円）を添える。数値には比較・変化・水準を添える。"
+        "暗号資産の記事には末尾に必ず note でリスク注記（価格変動が大きく元本割れの恐れ・預金保険対象外・本アプリは売買を行わない）。\n"
+        "専門用語で説明が必要なものは、下の『既存辞書』に無ければ terms に追加する。\n\n"
+        + NG_BAN + "\n"
+        f"publishedAt は全記事 \"{PUB}\" を使う。id の日付は {TODAY_COMPACT}。\n\n"
+        + SCHEMA_SPEC.replace("<PUB>", PUB)
+        + "\n\n=== 既存辞書（重複追加禁止の用語名） ===\n"
+        + ", ".join(sorted(existing_terms))
+        + "\n\n=== 調査メモ ===\n" + facts
+        + "\n\nそれではJSONのみを出力してください。"
+    )
+    return _stream_messages(build_system(), [{"role": "user", "content": rules}])
+
+
+def repair_articles(prior_text, errs):
+    """検証エラーをAIに差し戻し、該当箇所だけ直した完成版JSONを再出力させる。"""
+    fix = (
+        "前回出力したJSONに下記の検証エラーがありました。**該当箇所だけ**を直し、他はできるだけ保ったまま、"
+        "修正後の完成版JSONを丸ごと再出力してください（JSONのみ・コードフェンス禁止）。\n\n"
+        + NG_BAN
+        + "\n=== 検証エラー ===\n- " + "\n- ".join(errs)
+        + "\n\n=== 前回のJSON ===\n" + prior_text
+        + "\n\n修正後のJSONのみを出力してください。"
+    )
+    return _stream_messages(build_system(), [{"role": "user", "content": fix}])
 
 
 def parse_json_block(text):
@@ -283,10 +318,19 @@ def main():
     print("\nPhase B: 記事生成…", flush=True)
     text = generate_articles(facts, existing_terms)
     out = parse_json_block(text)
-
     errs = validate(out, bundled, existing_terms)
+
+    # 検証エラーはAIに差し戻して直させる（NGワード等）。最大3回までリトライ。
+    for attempt in range(3):
+        if not errs:
+            break
+        print(f"\n検証エラー → 修正を依頼（{attempt + 1}/3）:\n- " + "\n- ".join(errs), flush=True)
+        text = repair_articles(text, errs)
+        out = parse_json_block(text)
+        errs = validate(out, bundled, existing_terms)
+
     if errs:
-        raise SystemExit("検証エラー:\n- " + "\n- ".join(errs))
+        raise SystemExit("検証エラー（修正後も解消せず）:\n- " + "\n- ".join(errs))
 
     new_arts = out["articles"]
     data["articles"] = new_arts + data["articles"]
