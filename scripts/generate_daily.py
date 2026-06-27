@@ -21,7 +21,7 @@ import urllib.error
 from datetime import datetime, timezone, timedelta
 
 API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = os.environ.get("MODEL", "claude-opus-4-8")
+MODEL = os.environ.get("MODEL", "claude-sonnet-4-6")  # 高品質Opus→約4割安のSonnetに切替。Opusに戻すなら "claude-opus-4-8"
 API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 JST = timezone(timedelta(hours=9))
